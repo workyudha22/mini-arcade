@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+    <meta name="theme-color" content="#07080e" />
+    <meta name="description" content="Mini Arcade — enam game neon. Putar, tumpuk, hancurkan, susun, bertahan, pecahkan. Naik level, kejar rekor." />
+    <title>Mini Arcade — Main. Kalah. Ulangi.</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div id="app">
+      <div class="aurora" aria-hidden="true">
+        <span class="blob blob-a"></span>
+        <span class="blob blob-b"></span>
+        <span class="blob blob-c"></span>
+      </div>
+      <div class="grain" aria-hidden="true"></div>
+
+      <main class="hub" id="hub">
+        <header class="topbar">
+          <a class="brand" href="./" aria-label="Mini Arcade, kembali ke beranda">
+            <span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="wordmark">MINI<span>ARCADE</span></span>
+          </a>
+          <button class="sound-toggle" id="sound-hub" type="button" aria-pressed="false" aria-label="Aktifkan suara">
+            <span class="sound-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 9.5h3.3L12 5.6v12.8L7.3 14.5H4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15.4 9.2a4.1 4.1 0 0 1 0 5.6M18 6.6a7.4 7.4 0 0 1 0 10.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><span class="sound-label">SFX ON</span>
+          </button>
+        </header>
+
+        <section class="hero">
+          <p class="eyebrow"><span class="dot"></span>6 GAME · LEVEL &amp; REKOR</p>
+          <h1>Main.<br />Kalah.<br /><em>Ulangi.</em></h1>
+          <p class="lede">
+            Enam game kecil yang susah dimatikan. Tanpa login, tanpa jeda iklan,
+            tanpa alasan untuk berhenti di satu percobaan.
+          </p>
+        </section>
+
+        <section class="daily" id="daily" aria-label="Tantangan harian"></section>
+
+        <section class="games" id="games" aria-label="Pilih game"></section>
+
+        <footer class="hub-foot">
+          <span>Skor tersimpan di perangkat ini.</span>
+          <span class="foot-tip">Geser &amp; tap. Semua bisa dimainkan satu tangan.</span>
+        </footer>
+      </main>
+
+      <section class="stage" id="stage" hidden aria-label="Area permainan">
+        <div class="stage-glow" aria-hidden="true"></div>
+        <div class="host" id="host"></div>
+
+        <header class="hud">
+          <button class="icon-btn" id="back" type="button" aria-label="Kembali ke daftar game">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+          </button>
+          <div class="hud-stats">
+            <div class="stat">
+              <span>SKOR</span>
+              <b id="score">0</b>
+            </div>
+            <div class="hud-mid" id="hud-mid">
+              <span id="mid-label"></span>
+              <div class="meter" id="meter"><i id="meter-fill"></i></div>
+            </div>
+            <div class="stat stat-right">
+              <span>BEST</span>
+              <b id="best">0</b>
+            </div>
+          </div>
+          <button class="icon-btn" id="sound-stage" type="button" aria-pressed="false" aria-label="Aktifkan suara">
+            <span class="sound-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 9.5h3.3L12 5.6v12.8L7.3 14.5H4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15.4 9.2a4.1 4.1 0 0 1 0 5.6M18 6.6a7.4 7.4 0 0 1 0 10.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+          </button>
+        </header>
+
+        <div class="overlay" id="overlay" hidden>
+          <div class="panel" role="dialog" aria-modal="true" aria-labelledby="ov-title">
+            <p class="eyebrow" id="ov-eyebrow"></p>
+            <h2 id="ov-title"></h2>
+            <p class="ov-desc" id="ov-desc"></p>
+            <div class="ov-result" id="ov-result" hidden></div>
+            <button class="btn-primary" id="ov-btn" type="button"></button>
+            <p class="ov-hint" id="ov-hint"></p>
+          </div>
+        </div>
+
+        <div class="fx" id="fx" aria-hidden="true"></div>
+      </section>
+    </div>
+  </body>
+</html>
