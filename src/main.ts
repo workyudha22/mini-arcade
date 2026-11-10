@@ -17,6 +17,7 @@ import { SmashGame } from './games/smash';
 import { BlockfallGame } from './games/blockfall';
 import { RaidersGame } from './games/raiders';
 import { PrismGame } from './games/prism';
+import { SkyGame } from './games/sky';
 
 interface GameMeta {
   id: string;
@@ -192,6 +193,44 @@ const GAMES: GameMeta[] = [
       <rect x="118" y="176" width="84" height="10" rx="5" fill="#ffd166"/>
       <rect x="118" y="176" width="84" height="10" rx="5" stroke="#fff0b8" stroke-opacity=".55"/>
       <circle cx="160" cy="100" r="100" stroke="#fff" stroke-opacity=".04"/>
+    </svg>`,
+  },
+  {
+    id: 'sky',
+    index: '07',
+    name: 'SKY STRIKE',
+    blurb: 'Tembak meteor dan pesawat musuh, pungut equipment acak. Tiga darah, makin lama makin ganas.',
+    howto: 'Geser untuk menggerakkan pesawat; tembakan otomatis. Hancurkan meteor dan pesawat musuh untuk menjatuhkan equipment acak: darah, senjata, atau perisai. Mulai dengan 3 darah (maksimal 5). Tiap 20 detik naik level, musuh makin cepat dan makin banyak.',
+    accent: '#5eead4',
+    create: (host, ui) => new SkyGame(host, ui),
+    art: `<svg viewBox="0 0 320 200" fill="none" aria-hidden="true">
+      <g fill="#e6fffb" opacity=".55">
+        <circle cx="42" cy="28" r="1.6"/>
+        <circle cx="104" cy="18" r="1.2"/>
+        <circle cx="268" cy="34" r="1.4"/>
+        <circle cx="292" cy="88" r="1"/>
+        <circle cx="30" cy="96" r="1.1"/>
+      </g>
+      <ellipse cx="160" cy="182" rx="118" ry="24" fill="#5eead4" opacity=".07"/>
+      <g stroke="#ff7a45" stroke-opacity=".55" stroke-width="1.4" fill="#ff7a45" fill-opacity=".14">
+        <path d="M96 44l22-12 24 14-6 26-28 6z"/>
+        <path d="M228 30l18-9 20 12-4 22-24 4z"/>
+      </g>
+      <g stroke="#9ff6ff" stroke-width="2" stroke-linecap="round" opacity=".9">
+        <path d="M150 120V64M170 120V58"/>
+      </g>
+      <g fill="#5eead4">
+        <path d="M160 128l22 26-12-2-10 14-10-14-12 2z" opacity=".95"/>
+      </g>
+      <path d="M132 152h56" stroke="#d8fbff" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+      <circle cx="160" cy="146" r="4" fill="#fff"/>
+      <circle cx="160" cy="146" r="13" fill="#5eead4" opacity=".18"/>
+      <g transform="translate(248 132)">
+        <circle r="17" fill="#ffd166" opacity=".12"/>
+        <path d="M0-11l11 11L0 11-11 0z" fill="#ffd166" opacity=".9"/>
+        <path d="M0-11l11 11L0 11-11 0z" stroke="#fff6d8" stroke-opacity=".6"/>
+      </g>
+      <circle cx="160" cy="100" r="98" stroke="#fff" stroke-opacity=".04"/>
     </svg>`,
   },
 ];

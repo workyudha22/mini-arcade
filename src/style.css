@@ -798,6 +798,7 @@ body.muted .sound-icon {
   letter-spacing: 0.12em;
   color: var(--accent);
   min-height: 14px;
+  white-space: nowrap;
 }
 
 .meter {

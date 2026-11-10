@@ -1,7 +1,7 @@
 # Mini Arcade
 
-Enam game neon untuk satu tangan: putar, tumpuk, hancurkan, susun, bertahan,
-pecahkan. Tanpa login, tanpa backend. Skor terbaik tersimpan di perangkat lewat
+Tujuh game neon untuk satu tangan: putar, tumpuk, hancurkan, susun, bertahan,
+pecahkan, terbangkan. Tanpa login, tanpa backend. Skor terbaik tersimpan di perangkat lewat
 `localStorage`.
 
 ## Jalankan
@@ -36,6 +36,10 @@ Buka `http://localhost:5173`. Build produksi: `npm run build`, lalu
 - **Prism Break** — geser paddle, pantulkan bola, pecahkan semua prisma neon.
   Tiap level bola makin cepat dan susunan makin padat. Tiga bola; skor makin
   besar di level tinggi. Desktop: panah atau mouse.
+- **Sky Strike** — pesawat neon menembak otomatis ke atas. Hancurkan meteor,
+  pesawat tempur, dan bomber untuk menjatuhkan equipment acak: darah, senjata,
+  atau perisai. Mulai dengan 3 darah (maksimal 5); tiap 20 detik naik level dan
+  serangan makin padat. Desktop: panah atau WASD.
 
 ## Deploy
 
