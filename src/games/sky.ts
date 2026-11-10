@@ -63,7 +63,7 @@ export class SkyGame extends BaseGame {
 
   private player = new THREE.Group();
   private shieldRing = new THREE.Mesh(
-    new THREE.TorusGeometry(0.95, 0.045, 8, 36),
+    new THREE.TorusGeometry(1.35, 0.05, 8, 40),
     new THREE.MeshBasicMaterial({
       color: SHIELD,
       transparent: true,
@@ -205,75 +205,159 @@ export class SkyGame extends BaseGame {
   }
 
   private buildPlayer() {
+    // Top-down jet silhouette: nose, swept wings, tail boom.
+    const outline: Array<[number, number]> = [
+      [0, 1.7],
+      [0.13, 1.05],
+      [0.26, 0.68],
+      [0.38, 0.5],
+      [1.15, -0.12],
+      [1.28, -0.32],
+      [1.16, -0.5],
+      [0.44, -0.62],
+      [0.4, -1.15],
+      [0.16, -1.3],
+      [0, -1.32],
+    ];
+    const shape = new THREE.Shape();
+    shape.moveTo(outline[0][0], outline[0][1]);
+    for (let i = 1; i < outline.length; i++) shape.lineTo(outline[i][0], outline[i][1]);
+    for (let i = outline.length - 2; i > 0; i--) shape.lineTo(-outline[i][0], outline[i][1]);
+    shape.closePath();
+
+    const hullGeo = new THREE.ExtrudeGeometry(shape, {
+      depth: 0.22,
+      bevelEnabled: true,
+      bevelSize: 0.03,
+      bevelThickness: 0.03,
+      bevelSegments: 1,
+      curveSegments: 1,
+    });
+    hullGeo.translate(0, 0, -0.11);
+
     const hull = new THREE.Mesh(
-      new THREE.ConeGeometry(0.42, 1.6, 4),
+      hullGeo,
       new THREE.MeshStandardMaterial({
-        color: CYAN,
-        emissive: 0x1d8fae,
-        emissiveIntensity: 0.55,
-        roughness: 0.3,
-        metalness: 0.1,
-      }),
-    );
-    hull.rotation.z = Math.PI / 4;
-
-    const wing = new THREE.Mesh(
-      new THREE.BoxGeometry(2.0, 0.12, 0.2),
-      new THREE.MeshStandardMaterial({
-        color: 0xd8fbff,
-        emissive: 0x2fa9c4,
+        color: 0xa9f0ff,
+        emissive: 0x1f9fc0,
         emissiveIntensity: 0.5,
-        roughness: 0.35,
+        roughness: 0.36,
+        metalness: 0.12,
+      }),
+    );
+
+    const outlineMesh = new THREE.LineSegments(
+      new THREE.EdgesGeometry(hullGeo, 24),
+      new THREE.LineBasicMaterial({
+        color: 0xe8fdff,
+        transparent: true,
+        opacity: 0.55,
+      }),
+    );
+
+    const canopy = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 16, 12),
+      new THREE.MeshStandardMaterial({
+        color: 0xf2feff,
+        emissive: 0x8fe7ff,
+        emissiveIntensity: 0.5,
+        roughness: 0.25,
         metalness: 0.1,
       }),
     );
-    wing.position.y = -0.32;
+    canopy.scale.set(0.62, 1.7, 0.5);
+    canopy.position.set(0, 0.5, 0.16);
 
-    const tipGeo = new THREE.BoxGeometry(0.62, 0.1, 0.16);
-    const tipMat = new THREE.MeshStandardMaterial({
-      color: 0x8cedff,
+    const spine = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 1.5, 0.06),
+      new THREE.MeshStandardMaterial({
+        color: 0xd6f7ff,
+        emissive: 0x3fb6d4,
+        emissiveIntensity: 0.45,
+        roughness: 0.4,
+        metalness: 0.08,
+      }),
+    );
+    spine.position.set(0, -0.42, 0.14);
+
+    const podGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.55, 8);
+    podGeo.rotateX(Math.PI / 2);
+    const podMat = new THREE.MeshStandardMaterial({
+      color: 0xe4fbff,
       emissive: 0x2fa9c4,
-      emissiveIntensity: 0.45,
+      emissiveIntensity: 0.4,
       roughness: 0.4,
       metalness: 0.1,
     });
-    const tipL = new THREE.Mesh(tipGeo, tipMat);
-    tipL.position.set(-0.86, -0.5, 0);
-    tipL.rotation.z = 0.5;
-    const tipR = new THREE.Mesh(tipGeo, tipMat);
-    tipR.position.set(0.86, -0.5, 0);
-    tipR.rotation.z = -0.5;
+    const podL = new THREE.Mesh(podGeo, podMat);
+    podL.position.set(-0.86, -0.32, 0.02);
+    const podR = new THREE.Mesh(podGeo, podMat);
+    podR.position.set(0.86, -0.32, 0.02);
 
-    const fin = new THREE.Mesh(
-      new THREE.BoxGeometry(0.16, 0.5, 0.16),
-      new THREE.MeshStandardMaterial({
-        color: 0x9ff6ff,
-        emissive: 0x2fa9c4,
-        emissiveIntensity: 0.6,
-        roughness: 0.35,
-        metalness: 0.1,
-      }),
-    );
-    fin.position.set(0, -0.62, 0.05);
+    const finGeo = new THREE.BoxGeometry(0.07, 0.56, 0.22);
+    const finMat = new THREE.MeshStandardMaterial({
+      color: 0xd8fbff,
+      emissive: 0x2fa9c4,
+      emissiveIntensity: 0.55,
+      roughness: 0.35,
+      metalness: 0.1,
+    });
+    const finL = new THREE.Mesh(finGeo, finMat);
+    finL.position.set(-0.22, -0.86, 0.06);
+    finL.rotation.z = 0.2;
+    const finR = new THREE.Mesh(finGeo, finMat);
+    finR.position.set(0.22, -0.86, 0.06);
+    finR.rotation.z = -0.2;
 
-    const cockpit = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 12, 10),
-      new THREE.MeshBasicMaterial({ color: 0xeaffff }),
-    );
-    cockpit.position.set(0, 0.22, 0.22);
+    const lightGeo = new THREE.SphereGeometry(0.07, 8, 8);
+    const port = new THREE.Mesh(lightGeo, new THREE.MeshBasicMaterial({ color: 0xff5d7a }));
+    port.position.set(-1.2, -0.34, 0.08);
+    const starboard = new THREE.Mesh(lightGeo, new THREE.MeshBasicMaterial({ color: 0x7ef2b0 }));
+    starboard.position.set(1.2, -0.34, 0.08);
 
-    const thrust = glowSprite(CYAN, 2.2);
-    thrust.position.set(0, -1.0, -0.2);
-    thrust.material.opacity = 0.6;
+    const nozzleGeo = new THREE.CylinderGeometry(0.1, 0.12, 0.18, 10);
+    nozzleGeo.rotateX(Math.PI / 2);
+    const nozzleMat = new THREE.MeshBasicMaterial({ color: 0x0d3a46 });
+    const nozzleL = new THREE.Mesh(nozzleGeo, nozzleMat);
+    nozzleL.position.set(-0.16, -1.28, 0);
+    const nozzleR = new THREE.Mesh(nozzleGeo, nozzleMat);
+    nozzleR.position.set(0.16, -1.28, 0);
+
+    const exhaustL = glowSprite(0xbdf6ff, 1.5);
+    exhaustL.position.set(-0.18, -1.58, -0.15);
+    exhaustL.material.opacity = 0.7;
+    const exhaustR = glowSprite(0xbdf6ff, 1.5);
+    exhaustR.position.set(0.18, -1.58, -0.15);
+    exhaustR.material.opacity = 0.7;
+    const thrust = glowSprite(CYAN, 3.2);
+    thrust.position.set(0, -1.85, -0.4);
+    thrust.material.opacity = 0.28;
 
     this.shieldRing.visible = false;
-    this.player.add(hull, wing, tipL, tipR, fin, cockpit, thrust, this.shieldRing);
+    this.player.add(
+      hull,
+      outlineMesh,
+      canopy,
+      spine,
+      podL,
+      podR,
+      finL,
+      finR,
+      port,
+      starboard,
+      nozzleL,
+      nozzleR,
+      exhaustL,
+      exhaustR,
+      thrust,
+      this.shieldRing,
+    );
     this.player.position.set(0, -5, 0);
     this.scene.add(this.player);
 
-    const bodyGlow = glowSprite(0x2ea8c9, 2.6);
-    bodyGlow.position.z = -0.6;
-    bodyGlow.material.opacity = 0.22;
+    const bodyGlow = glowSprite(0x2ea8c9, 4.2);
+    bodyGlow.position.z = -0.8;
+    bodyGlow.material.opacity = 0.16;
     this.player.add(bodyGlow);
   }
 
@@ -423,11 +507,11 @@ export class SkyGame extends BaseGame {
   }
 
   private clampX(x: number) {
-    return clamp(x, -this.halfW + 1.1, this.halfW - 1.1);
+    return clamp(x, -this.halfW + 1.4, this.halfW - 1.4);
   }
 
   private clampY(y: number) {
-    return clamp(y, -this.halfH + 1.3, this.halfH * 0.3);
+    return clamp(y, -this.halfH + 1.8, this.halfH - 2);
   }
 
   /* ---------------------------------------------------------------- */
@@ -658,7 +742,7 @@ export class SkyGame extends BaseGame {
   }
 
   private shoot() {
-    const y = this.playerY + 1.05;
+    const y = this.playerY + 1.65;
     const offsets = this.weapon === 1 ? [{ x: 0, vx: 0 }] : this.weapon === 2 ? [
       { x: -0.34, vx: 0 },
       { x: 0.34, vx: 0 },
