@@ -957,11 +957,57 @@ export class SkyGame extends BaseGame {
       }
     } else if (this.mode === 'dead') {
       this.deadIn -= dt;
+      // World drifts in slow motion while the player is gone — nothing fights back.
+      this.driftingWorld(dt * 0.35);
       this.animateStars(dt, 1.1);
       if (this.deadIn <= 0) {
         this.mode = 'idle';
         this.finish();
       }
+    }
+  }
+
+  private driftingWorld(dt: number) {
+    const minY = -this.halfH - 2.5;
+    for (const foe of this.foes) {
+      if (!foe.alive) continue;
+      foe.group.position.x += foe.vx * dt;
+      foe.group.position.y -= foe.vy * dt;
+      if (foe.kind === 'meteor') {
+        foe.meteor.rotation.x += foe.spin * dt;
+        foe.meteor.rotation.y += foe.spin * 0.8 * dt;
+      }
+      if (foe.group.position.y < minY) this.deactivate(foe);
+    }
+    for (const shot of this.enemyBullets) {
+      if (!shot.active) continue;
+      shot.mesh.position.x += shot.vx * dt;
+      shot.mesh.position.y += shot.vy * dt;
+      if (
+        shot.mesh.position.y < -this.halfH - 2 ||
+        shot.mesh.position.y > this.halfH + 2 ||
+        Math.abs(shot.mesh.position.x) > this.halfW + 2
+      ) {
+        shot.active = false;
+        shot.mesh.visible = false;
+      }
+    }
+    for (const shot of this.bullets) {
+      if (!shot.active) continue;
+      shot.mesh.position.x += shot.vx * dt;
+      shot.mesh.position.y += shot.vy * dt;
+      if (
+        shot.mesh.position.y > this.halfH + 2 ||
+        shot.mesh.position.y < -this.halfH - 2 ||
+        Math.abs(shot.mesh.position.x) > this.halfW + 2
+      ) {
+        shot.active = false;
+        shot.mesh.visible = false;
+      }
+    }
+    const boss = this.boss;
+    if (boss.alive) {
+      boss.group.position.y -= 0.6 * dt;
     }
   }
 
@@ -986,7 +1032,7 @@ export class SkyGame extends BaseGame {
 
   private hudText() {
     if (this.phase === 'boss' && this.boss.alive) {
-      return `${this.boss.name} · ${Math.max(0, this.boss.hp)}/${this.boss.maxHp}`;
+      return `${this.boss.name} · ${Math.max(0, this.boss.hp)}/${this.boss.maxHp} · HP ${this.hp}/${MAX_HP} · ${this.weaponForm} ${this.weaponLevel}`;
     }
     return `LV ${this.level} · ${this.hp}/${MAX_HP} · ${this.weaponForm} ${this.weaponLevel}`;
   }
@@ -1260,12 +1306,12 @@ export class SkyGame extends BaseGame {
         break;
       }
       case 'RING': {
-        // Radial shockwave of tetra bolts in every direction.
+        // Fan of 180° upward with a slow sway — every bolt counts, none wasted below.
         const count = 6 + l * 2;
         const dmg = l >= 8 ? 2 : 1;
-        const base = this.elapsed * 0.8;
+        const sway = Math.sin(this.elapsed * 1.3) * 0.16;
         for (let i = 0; i < count; i++) {
-          const a = base + (i / count) * Math.PI * 2;
+          const a = (count > 1 ? (i / (count - 1)) * Math.PI : Math.PI / 2) + sway;
           spawn(0, 0, Math.cos(a) * 13.5, Math.sin(a) * 13.5, dmg, 0);
         }
         break;
@@ -1455,7 +1501,8 @@ export class SkyGame extends BaseGame {
 
     const dx = boss.group.position.x - this.playerX;
     const dy = boss.group.position.y - this.playerY;
-    if (dx * dx + dy * dy < (boss.radius + 0.45) ** 2) {
+    const hitRadius = boss.radius * 0.72 + 0.15;
+    if (dx * dx + dy * dy < hitRadius * hitRadius) {
       this.hitPlayer();
       if (this.mode !== 'play') return;
     }
