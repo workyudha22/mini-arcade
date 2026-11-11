@@ -37,9 +37,10 @@ Buka `http://localhost:5173`. Build produksi: `npm run build`, lalu
   Tiap level bola makin cepat dan susunan makin padat. Tiga bola; skor makin
   besar di level tinggi. Desktop: panah atau mouse.
 - **Sky Strike** — pesawat neon menembak otomatis ke atas. Hancurkan meteor,
-  pesawat tempur, dan bomber untuk menjatuhkan equipment acak: darah, senjata,
-  atau perisai. Mulai dengan 3 darah (maksimal 5); tiap 20 detik naik level dan
-  serangan makin padat. Desktop: panah atau WASD.
+  pesawat tempur, drone, bomber, dan turret untuk menjatuhkan equipment acak:
+  darah, senjata, atau perisai. Senjata naik sampai W5 dengan pola tembakan
+  berbeda. Tiap level berakhir dengan raja yang serangannya makin ganas —
+  kalahkan raja untuk naik level. Desktop: panah atau WASD.
 
 ## Deploy
 

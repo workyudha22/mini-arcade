@@ -4,15 +4,18 @@ import { sfx } from '../core/audio';
 import { clamp, damp, rand } from '../core/util';
 
 type Mode = 'idle' | 'play' | 'dead';
-type FoeKind = 'meteor' | 'fighter' | 'bomber';
+type Phase = 'wave' | 'boss';
+type FoeKind = 'meteor' | 'fighter' | 'bomber' | 'darter' | 'turret';
+type BossKind = 'meteor' | 'carrier' | 'fortress' | 'void';
 type PickupType = 'hp' | 'weapon' | 'shield';
 
 const MAX_HP = 5;
 const START_HP = 3;
-const LEVEL_TIME = 20;
-const FOE_POOL = 24;
-const SHOT_POOL = 48;
-const ENEMY_SHOT_POOL = 44;
+const MAX_WEAPON = 5;
+const WAVE_TIME = 16;
+const FOE_POOL = 30;
+const SHOT_POOL = 96;
+const ENEMY_SHOT_POOL = 110;
 const PICKUP_POOL = 6;
 
 const CYAN = 0x9ff6ff;
@@ -23,6 +26,29 @@ const ROCK = 0xff7a45;
 const HEALTH = 0x7ef2b0;
 const WEAPON = 0xffd166;
 const SHIELD = 0x4ee1ff;
+const VIOLET = 0xa78bfa;
+
+const BOSS_KINDS: BossKind[] = ['meteor', 'carrier', 'fortress', 'void'];
+const BOSS_NAMES: Record<BossKind, string> = {
+  meteor: 'RAJA METEOR',
+  carrier: 'RAJA SAYAP',
+  fortress: 'RAJA BOMBARDIR',
+  void: 'RAJA VOID',
+};
+const BOSS_COLORS: Record<BossKind, number> = {
+  meteor: ROCK,
+  carrier: HOSTILE,
+  fortress: BOMBER,
+  void: VIOLET,
+};
+const FOE_COLORS: Record<FoeKind, number> = {
+  meteor: ROCK,
+  fighter: HOSTILE,
+  bomber: BOMBER,
+  darter: HEALTH,
+  turret: VIOLET,
+};
+const RANKS = ['', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 
 interface Foe {
   group: THREE.Group;
@@ -30,6 +56,8 @@ interface Foe {
   edge: THREE.LineSegments;
   fighter: THREE.Group;
   bomber: THREE.Group;
+  darter: THREE.Group;
+  turret: THREE.Group;
   glow: THREE.Sprite;
   alive: boolean;
   kind: FoeKind;
@@ -42,11 +70,31 @@ interface Foe {
   big: boolean;
 }
 
+interface Boss {
+  group: THREE.Group;
+  core: THREE.Mesh;
+  ring: THREE.Mesh;
+  wings: THREE.Group;
+  spikes: THREE.Group;
+  glow: THREE.Sprite;
+  alive: boolean;
+  kind: BossKind;
+  name: string;
+  hp: number;
+  maxHp: number;
+  radius: number;
+  entering: boolean;
+  attackIn: number;
+  spawnIn: number;
+  spiral: number;
+}
+
 interface Shot {
   mesh: THREE.Mesh;
   active: boolean;
   vx: number;
   vy: number;
+  pierce: number;
 }
 
 interface Pickup {
@@ -85,7 +133,9 @@ export class SkyGame extends BaseGame {
   private starPos: Float32Array;
 
   private mode: Mode = 'idle';
+  private phase: Phase = 'wave';
   private elapsed = 0;
+  private waveClock = 0;
   private level = 1;
   private hp = START_HP;
   private weapon = 1;
@@ -96,6 +146,8 @@ export class SkyGame extends BaseGame {
   private fireIn = 0;
   private sinceDrop = 0;
   private hudIn = 0;
+  private bossWarned = false;
+  private boss!: Boss;
   private drag: { id: number; x: number; y: number; tx: number; ty: number } | null = null;
   private keys = new Set<string>();
 
@@ -128,6 +180,42 @@ export class SkyGame extends BaseGame {
     emissiveIntensity: 0.32,
     roughness: 0.45,
     metalness: 0.08,
+  });
+  private darterMat = new THREE.MeshStandardMaterial({
+    color: HEALTH,
+    emissive: HEALTH,
+    emissiveIntensity: 0.4,
+    roughness: 0.4,
+    metalness: 0.08,
+  });
+  private turretMat = new THREE.MeshStandardMaterial({
+    color: VIOLET,
+    emissive: VIOLET,
+    emissiveIntensity: 0.35,
+    roughness: 0.5,
+    metalness: 0.1,
+  });
+  private turretRingMat = new THREE.MeshBasicMaterial({
+    color: VIOLET,
+    transparent: true,
+    opacity: 0.75,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  private bossMat = new THREE.MeshStandardMaterial({
+    color: ROCK,
+    emissive: ROCK,
+    emissiveIntensity: 0.4,
+    roughness: 0.38,
+    metalness: 0.15,
+    flatShading: true,
+  });
+  private bossRingMat = new THREE.MeshBasicMaterial({
+    color: ROCK,
+    transparent: true,
+    opacity: 0.8,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
   private trimMat = new THREE.MeshBasicMaterial({ color: 0xffe0e6 });
   private bulletGeo = new THREE.BoxGeometry(0.1, 0.6, 0.1);
@@ -173,6 +261,7 @@ export class SkyGame extends BaseGame {
     this.buildFoes();
     this.buildShots();
     this.buildPickups();
+    this.buildBoss();
     this.bindInput();
     this.mount();
   }
@@ -382,11 +471,28 @@ export class SkyGame extends BaseGame {
       const bomberWing = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.14, 0.22), this.bomberMat);
       bomber.add(bomberBody, bomberWing);
 
+      const darter = new THREE.Group();
+      const darterBody = new THREE.Mesh(new THREE.ConeGeometry(0.26, 1.1, 4), this.darterMat);
+      darterBody.rotation.z = Math.PI;
+      const darterWing = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.08, 0.14), this.trimMat);
+      darterWing.position.y = 0.3;
+      darter.add(darterBody, darterWing);
+
+      const turret = new THREE.Group();
+      const turretBodyGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.42, 6);
+      turretBodyGeo.rotateX(Math.PI / 2);
+      const turretBody = new THREE.Mesh(turretBodyGeo, this.turretMat);
+      const turretRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.66, 0.07, 8, 24),
+        this.turretRingMat,
+      );
+      turret.add(turretBody, turretRing);
+
       const glow = glowSprite(ROCK, 1.9);
       glow.position.z = -0.4;
       glow.material.opacity = 0.35;
 
-      group.add(meteor, fighter, bomber, glow);
+      group.add(meteor, fighter, bomber, darter, turret, glow);
       group.visible = false;
       this.scene.add(group);
 
@@ -396,6 +502,8 @@ export class SkyGame extends BaseGame {
         edge,
         fighter,
         bomber,
+        darter,
+        turret,
         glow,
         alive: false,
         kind: 'meteor',
@@ -410,18 +518,72 @@ export class SkyGame extends BaseGame {
     }
   }
 
+  private buildBoss() {
+    const group = new THREE.Group();
+
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.15, 0), this.bossMat);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(2.05, 0.1, 8, 48), this.bossRingMat);
+
+    const wings = new THREE.Group();
+    const wingGeo = new THREE.BoxGeometry(1.6, 0.2, 0.4);
+    const wingL = new THREE.Mesh(wingGeo, this.bossMat);
+    wingL.position.set(-1.9, -0.2, 0);
+    wingL.rotation.z = -0.18;
+    const wingR = new THREE.Mesh(wingGeo, this.bossMat);
+    wingR.position.set(1.9, -0.2, 0);
+    wingR.rotation.z = 0.18;
+    wings.add(wingL, wingR);
+
+    const spikes = new THREE.Group();
+    const spikeGeo = new THREE.ConeGeometry(0.16, 0.85, 4);
+    for (let i = 0; i < 6; i++) {
+      const spike = new THREE.Mesh(spikeGeo, this.bossMat);
+      const a = (i / 6) * Math.PI * 2;
+      spike.position.set(Math.cos(a) * 1.25, Math.sin(a) * 1.25, 0);
+      spike.rotation.z = a - Math.PI / 2;
+      spikes.add(spike);
+    }
+
+    const glow = glowSprite(ROCK, 6.5);
+    glow.position.z = -0.7;
+    glow.material.opacity = 0.3;
+
+    group.add(core, ring, wings, spikes, glow);
+    group.visible = false;
+    this.scene.add(group);
+
+    this.boss = {
+      group,
+      core,
+      ring,
+      wings,
+      spikes,
+      glow,
+      alive: false,
+      kind: 'meteor',
+      name: BOSS_NAMES.meteor,
+      hp: 1,
+      maxHp: 1,
+      radius: 1.9,
+      entering: true,
+      attackIn: 2,
+      spawnIn: 4,
+      spiral: 0,
+    };
+  }
+
   private buildShots() {
     for (let i = 0; i < SHOT_POOL; i++) {
       const mesh = new THREE.Mesh(this.bulletGeo, this.bulletMat);
       mesh.visible = false;
       this.scene.add(mesh);
-      this.bullets.push({ mesh, active: false, vx: 0, vy: 17 });
+      this.bullets.push({ mesh, active: false, vx: 0, vy: 17, pierce: 0 });
     }
     for (let i = 0; i < ENEMY_SHOT_POOL; i++) {
       const mesh = new THREE.Mesh(this.shardGeo, this.shardMat);
       mesh.visible = false;
       this.scene.add(mesh);
-      this.enemyBullets.push({ mesh, active: false, vx: 0, vy: -5 });
+      this.enemyBullets.push({ mesh, active: false, vx: 0, vy: -5, pierce: 0 });
     }
   }
 
@@ -518,7 +680,9 @@ export class SkyGame extends BaseGame {
 
   protected reset() {
     this.mode = 'play';
+    this.phase = 'wave';
     this.elapsed = 0;
+    this.waveClock = 0;
     this.level = 1;
     this.hp = START_HP;
     this.weapon = 1;
@@ -529,8 +693,12 @@ export class SkyGame extends BaseGame {
     this.fireIn = 0.2;
     this.sinceDrop = 0;
     this.hudIn = 0;
+    this.bossWarned = false;
     this.drag = null;
     this.keys.clear();
+
+    this.boss.alive = false;
+    this.boss.group.visible = false;
 
     this.playerX = this.targetX = 0;
     this.playerY = this.targetY = -this.halfH * 0.55;
@@ -563,13 +731,6 @@ export class SkyGame extends BaseGame {
 
     if (this.mode === 'play') {
       this.elapsed += dt;
-      const nextLevel = 1 + Math.floor(this.elapsed / LEVEL_TIME);
-      if (nextLevel !== this.level) {
-        this.level = nextLevel;
-        this.ui.float(`LEVEL ${this.level}`, window.innerWidth / 2, window.innerHeight * 0.34, 'gold');
-        sfx.gold();
-      }
-
       this.movePlayer(dt);
 
       this.shield = Math.max(0, this.shield - dt);
@@ -581,12 +742,30 @@ export class SkyGame extends BaseGame {
 
       this.fireIn -= dt;
       if (this.fireIn <= 0) {
-        this.fireIn = Math.max(0.12, 0.24 - (this.weapon - 1) * 0.035);
+        this.fireIn = Math.max(0.12, 0.24 - (this.weapon - 1) * 0.032);
         this.shoot();
       }
 
-      this.spawnIn -= dt;
-      if (this.spawnIn <= 0) this.spawnFoe();
+      if (this.phase === 'wave') {
+        this.waveClock += dt;
+        if (!this.bossWarned && this.waveClock >= WAVE_TIME - 3) {
+          this.bossWarned = true;
+          this.ui.float('RAJA MENDATANG', window.innerWidth / 2, window.innerHeight * 0.3, 'bad');
+          sfx.timeUp();
+        }
+        if (this.waveClock >= WAVE_TIME) {
+          this.spawnBoss();
+        } else {
+          this.spawnIn -= dt;
+          if (this.spawnIn <= 0) {
+            this.spawnFoe();
+            if (this.level >= 4 && this.rng() < 0.3) this.spawnFoe();
+          }
+        }
+      } else {
+        this.updateBoss(dt);
+        if (this.mode !== 'play') return;
+      }
 
       this.updateFoes(dt);
       this.updateBullets(dt);
@@ -628,55 +807,89 @@ export class SkyGame extends BaseGame {
   }
 
   private hudText() {
+    if (this.phase === 'boss' && this.boss.alive) {
+      return `${this.boss.name} · ${Math.max(0, this.boss.hp)}/${this.boss.maxHp}`;
+    }
     return `LV ${this.level} · ${this.hp}/${MAX_HP} · W${this.weapon}`;
   }
 
   private updateHud() {
-    this.ui.setMid(this.hudText(), (this.elapsed % LEVEL_TIME) / LEVEL_TIME);
+    const ratio =
+      this.phase === 'boss' && this.boss.alive
+        ? this.boss.hp / this.boss.maxHp
+        : this.waveClock / WAVE_TIME;
+    this.ui.setMid(this.hudText(), clamp(ratio, 0, 1));
   }
 
   /* ---------------------------------------------------------------- */
 
-  private spawnFoe() {
+  private pickFoeKind(): FoeKind {
+    const r = this.rng();
     const level = this.level;
-    this.spawnIn = Math.max(0.28, 0.86 - (level - 1) * 0.055) * rand(0.72, 1.2, this.rng);
+    if (level <= 1) return r < 0.58 ? 'meteor' : 'fighter';
+    if (level === 2) return r < 0.4 ? 'meteor' : r < 0.78 ? 'fighter' : 'darter';
+    if (level === 3) {
+      return r < 0.28 ? 'meteor' : r < 0.56 ? 'fighter' : r < 0.76 ? 'darter' : r < 0.9 ? 'bomber' : 'turret';
+    }
+    return r < 0.2 ? 'meteor' : r < 0.45 ? 'fighter' : r < 0.65 ? 'darter' : r < 0.84 ? 'bomber' : 'turret';
+  }
+
+  private spawnFoe(forceKind?: FoeKind, atX?: number, atY?: number) {
+    const level = this.level;
+    this.spawnIn = Math.max(0.2, 0.82 - (level - 1) * 0.05) * rand(0.75, 1.2, this.rng);
 
     const foe = this.foes.find((f) => !f.alive);
     if (!foe) return;
-    const roll = this.rng();
-    const kind: FoeKind = roll < 0.5 ? 'meteor' : roll < 0.87 ? 'fighter' : 'bomber';
+    const kind = forceKind ?? this.pickFoeKind();
 
     foe.alive = true;
     foe.kind = kind;
     foe.big = kind === 'meteor' && this.rng() < 0.22;
-    foe.fireIn = rand(0.7, 1.8, this.rng);
+    foe.fireIn = rand(0.6, 1.6, this.rng);
     foe.spin = rand(-1.6, 1.6, this.rng);
-    foe.group.position.set(rand(-this.halfW + 1.4, this.halfW - 1.4, this.rng), this.halfH + 1.6, 0);
+    foe.group.position.set(
+      atX ?? rand(-this.halfW + 1.4, this.halfW - 1.4, this.rng),
+      atY ?? this.halfH + 1.6,
+      0,
+    );
     foe.group.rotation.set(0, 0, 0);
     foe.group.visible = true;
 
     foe.meteor.visible = kind === 'meteor';
     foe.fighter.visible = kind === 'fighter';
     foe.bomber.visible = kind === 'bomber';
-    foe.glow.material.color.set(kind === 'meteor' ? ROCK : kind === 'fighter' ? HOSTILE : BOMBER);
+    foe.darter.visible = kind === 'darter';
+    foe.turret.visible = kind === 'turret';
+    foe.glow.material.color.set(FOE_COLORS[kind]);
 
     if (kind === 'meteor') {
-      foe.hp = foe.big ? 3 : 1;
+      foe.hp = foe.big ? 3 + Math.floor(level / 4) : 1;
       foe.radius = foe.big ? 0.95 : 0.6;
-      foe.vy = rand(2.1, 2.9, this.rng) + level * 0.16;
+      foe.vy = rand(2.1, 2.9, this.rng) + level * 0.18;
       foe.vx = rand(-1.0, 1.0, this.rng);
       foe.meteor.scale.setScalar(foe.big ? 1.6 : 1);
       foe.meteor.rotation.set(this.rng() * 3, this.rng() * 3, 0);
     } else if (kind === 'fighter') {
-      foe.hp = 1;
+      foe.hp = 1 + Math.floor(level / 3);
       foe.radius = 0.6;
-      foe.vy = 1.7 + level * 0.1;
-      foe.vx = (this.playerX - foe.group.position.x) * 0.18;
-    } else {
-      foe.hp = 4 + Math.floor(level * 0.5);
+      foe.vy = 1.8 + level * 0.12;
+      foe.vx = (this.playerX - foe.group.position.x) * 0.2;
+    } else if (kind === 'bomber') {
+      foe.hp = 5 + level * 2;
       foe.radius = 0.85;
-      foe.vy = 1.1 + level * 0.05;
+      foe.vy = 1.1 + level * 0.06;
       foe.vx = 0;
+    } else if (kind === 'darter') {
+      foe.hp = 1;
+      foe.radius = 0.42;
+      foe.vy = 4.2 + level * 0.22;
+      foe.vx = 0;
+    } else {
+      foe.hp = 4 + Math.floor(level * 1.2);
+      foe.radius = 0.75;
+      foe.vy = 0.9 + level * 0.05;
+      foe.vx = 0;
+      foe.fireIn = rand(0.4, 1, this.rng);
     }
   }
 
@@ -684,6 +897,9 @@ export class SkyGame extends BaseGame {
     const minY = -this.halfH - 2.5;
     for (const foe of this.foes) {
       if (!foe.alive) continue;
+      if (foe.kind === 'darter') {
+        foe.vx = Math.sin(this.elapsed * 5 + foe.spin) * 3.4;
+      }
       foe.group.position.x += foe.vx * dt;
       foe.group.position.y -= foe.vy * dt;
 
@@ -694,16 +910,22 @@ export class SkyGame extends BaseGame {
         foe.fighter.rotation.z = Math.sin(foe.group.position.y * 0.6) * 0.12;
         foe.fireIn -= dt;
         if (foe.fireIn <= 0) {
-          foe.fireIn = Math.max(0.55, 1.5 - this.level * 0.07);
+          foe.fireIn = Math.max(0.45, 1.5 - this.level * 0.08);
           this.fireEnemy(foe);
         }
-      } else {
+      } else if (foe.kind === 'bomber') {
         foe.bomber.rotation.z += dt * 0.4;
         foe.fireIn -= dt;
         if (foe.fireIn <= 0) {
-          foe.fireIn = Math.max(1.2, 2.4 - this.level * 0.08);
-          this.fireEnemy(foe);
-          this.fireEnemy(foe, 0.35);
+          foe.fireIn = Math.max(1.0, 2.2 - this.level * 0.08);
+          this.fireFan(foe.group.position, 3, 0.5, 3.4 + this.level * 0.22);
+        }
+      } else if (foe.kind === 'turret') {
+        foe.turret.rotation.z += dt * 0.6;
+        foe.fireIn -= dt;
+        if (foe.fireIn <= 0) {
+          foe.fireIn = Math.max(0.9, 2.2 - this.level * 0.1);
+          this.fireFan(foe.group.position, 3, 0.42, 3.6 + this.level * 0.24);
         }
       }
 
@@ -727,31 +949,60 @@ export class SkyGame extends BaseGame {
     }
   }
 
-  private fireEnemy(foe: Foe, spread = 0) {
+  private fireShot(x: number, y: number, vx: number, vy: number) {
     const shot = this.enemyBullets.find((s) => !s.active);
     if (!shot) return;
-    const dx = this.playerX - foe.group.position.x;
-    const dy = this.playerY - foe.group.position.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const speed = 4 + this.level * 0.28;
     shot.active = true;
     shot.mesh.visible = true;
-    shot.mesh.position.copy(foe.group.position);
-    shot.vx = (dx / len) * speed + spread * speed;
-    shot.vy = (dy / len) * speed;
+    shot.mesh.position.set(x, y, 0);
+    shot.vx = vx;
+    shot.vy = vy;
+  }
+
+  private fireFan(origin: THREE.Vector3, count: number, arc: number, speed: number) {
+    const base = Math.atan2(this.playerY - origin.y, this.playerX - origin.x);
+    const start = base - arc / 2;
+    const step = count > 1 ? arc / (count - 1) : 0;
+    for (let i = 0; i < count; i++) {
+      const a = start + step * i;
+      this.fireShot(origin.x, origin.y, Math.cos(a) * speed, Math.sin(a) * speed);
+    }
+  }
+
+  private fireEnemy(foe: Foe) {
+    const count = this.level >= 5 ? 2 : 1;
+    this.fireFan(foe.group.position, count, 0.18, 4.2 + this.level * 0.3);
   }
 
   private shoot() {
     const y = this.playerY + 1.65;
-    const offsets = this.weapon === 1 ? [{ x: 0, vx: 0 }] : this.weapon === 2 ? [
-      { x: -0.34, vx: 0 },
-      { x: 0.34, vx: 0 },
-    ] : [
-      { x: 0, vx: 0 },
-      { x: -0.42, vx: -2.4 },
-      { x: 0.42, vx: 2.4 },
+    const patterns: Array<Array<{ x: number; vx: number }>> = [
+      [{ x: 0, vx: 0 }],
+      [
+        { x: -0.34, vx: 0 },
+        { x: 0.34, vx: 0 },
+      ],
+      [
+        { x: 0, vx: 0 },
+        { x: -0.42, vx: -2.4 },
+        { x: 0.42, vx: 2.4 },
+      ],
+      [
+        { x: -0.5, vx: 0 },
+        { x: 0.5, vx: 0 },
+        { x: -0.8, vx: -1.8 },
+        { x: 0.8, vx: 1.8 },
+      ],
+      [
+        { x: 0, vx: 0 },
+        { x: -0.4, vx: -2.2 },
+        { x: 0.4, vx: 2.2 },
+        { x: -0.75, vx: -4.4 },
+        { x: 0.75, vx: 4.4 },
+      ],
     ];
-    for (const o of offsets) {
+    const pierce = this.weapon >= MAX_WEAPON ? 2 : 0;
+    for (const o of patterns[Math.min(this.weapon, MAX_WEAPON) - 1]) {
       const shot = this.bullets.find((s) => !s.active);
       if (!shot) break;
       shot.active = true;
@@ -759,6 +1010,7 @@ export class SkyGame extends BaseGame {
       shot.mesh.position.set(this.playerX + o.x, y, 0);
       shot.vx = o.vx;
       shot.vy = 17;
+      shot.pierce = pierce;
     }
     sfx.laser();
   }
@@ -773,6 +1025,21 @@ export class SkyGame extends BaseGame {
         shot.mesh.visible = false;
         continue;
       }
+
+      const boss = this.boss;
+      if (boss.alive) {
+        const dx = shot.mesh.position.x - boss.group.position.x;
+        const dy = shot.mesh.position.y - boss.group.position.y;
+        if (dx * dx + dy * dy <= (boss.radius + 0.2) ** 2) {
+          boss.hp -= 1;
+          this.particles.spawn(shot.mesh.position, 0xd8fbff, 4, 3, 0.1);
+          shot.active = false;
+          shot.mesh.visible = false;
+          if (boss.hp <= 0) this.killBoss();
+          continue;
+        }
+      }
+
       for (const foe of this.foes) {
         if (!foe.alive) continue;
         const dx = shot.mesh.position.x - foe.group.position.x;
@@ -780,11 +1047,14 @@ export class SkyGame extends BaseGame {
         if (dx * dx + dy * dy > (foe.radius + 0.18) ** 2) continue;
 
         foe.hp -= 1;
-        shot.active = false;
-        shot.mesh.visible = false;
+        if (shot.pierce > 0) shot.pierce--;
+        else {
+          shot.active = false;
+          shot.mesh.visible = false;
+        }
         this.particles.spawn(shot.mesh.position, 0xd8fbff, 4, 3, 0.1);
         if (foe.hp <= 0) this.killFoe(foe);
-        break;
+        if (!shot.active) break;
       }
     }
 
@@ -792,7 +1062,11 @@ export class SkyGame extends BaseGame {
       if (!shot.active) continue;
       shot.mesh.position.x += shot.vx * dt;
       shot.mesh.position.y += shot.vy * dt;
-      if (shot.mesh.position.y < -this.halfH - 2 || Math.abs(shot.mesh.position.x) > this.halfW + 2) {
+      if (
+        shot.mesh.position.y < -this.halfH - 2 ||
+        shot.mesh.position.y > this.halfH + 2 ||
+        Math.abs(shot.mesh.position.x) > this.halfW + 2
+      ) {
         shot.active = false;
         shot.mesh.visible = false;
         continue;
@@ -808,18 +1082,192 @@ export class SkyGame extends BaseGame {
     }
   }
 
+  /* ---------------------------------------------------------------- */
+
+  private spawnBoss() {
+    const rank = Math.floor((this.level - 1) / BOSS_KINDS.length);
+    const kind = BOSS_KINDS[(this.level - 1) % BOSS_KINDS.length];
+    const boss = this.boss;
+    const color = BOSS_COLORS[kind];
+
+    boss.alive = true;
+    boss.kind = kind;
+    boss.name = BOSS_NAMES[kind] + (rank ? ` ${RANKS[Math.min(rank, RANKS.length - 1)]}` : '');
+    boss.maxHp = boss.hp = Math.round((50 + this.level * 28) * (1 + rank * 0.6));
+    boss.radius = 1.9;
+    boss.entering = true;
+    boss.attackIn = 1.8;
+    boss.spawnIn = kind === 'carrier' || kind === 'void' ? 3 : 99;
+    boss.spiral = 0;
+    boss.group.position.set(0, this.halfH + 4, 0);
+    boss.group.visible = true;
+
+    this.bossMat.color.set(color);
+    this.bossMat.emissive.set(color);
+    this.bossRingMat.color.set(color);
+    boss.glow.material.color.set(color);
+    boss.ring.visible = kind !== 'fortress';
+    boss.wings.visible = kind === 'carrier' || kind === 'fortress';
+    boss.spikes.visible = kind === 'meteor' || kind === 'void';
+    boss.core.scale.setScalar(kind === 'fortress' ? 1.3 : kind === 'carrier' ? 1 : 1.1);
+
+    this.phase = 'boss';
+    this.ui.float(boss.name, window.innerWidth / 2, window.innerHeight * 0.3, 'bad');
+    this.updateHud();
+    sfx.timeUp();
+  }
+
+  private updateBoss(dt: number) {
+    const boss = this.boss;
+    if (!boss.alive) return;
+    const t = this.elapsed;
+
+    if (boss.entering) {
+      boss.group.position.y = damp(boss.group.position.y, this.halfH - 3.6, 2.4, dt);
+      if (boss.group.position.y < this.halfH - 3.4) boss.entering = false;
+    } else {
+      const span = Math.max(2, this.halfW - 2.8);
+      boss.group.position.x = Math.sin(t * (0.5 + this.level * 0.02)) * span;
+      boss.group.position.y = this.halfH - 3.6 + Math.sin(t * 1.4) * 0.4;
+    }
+    boss.group.rotation.z = Math.sin(t * 0.9) * 0.1;
+    boss.ring.rotation.z += dt * 1.3;
+    boss.core.rotation.x += dt * 0.4;
+    boss.core.rotation.y += dt * 0.6;
+    boss.glow.material.opacity = 0.26 + Math.sin(t * 5) * 0.08;
+
+    const dx = boss.group.position.x - this.playerX;
+    const dy = boss.group.position.y - this.playerY;
+    if (dx * dx + dy * dy < (boss.radius + 0.45) ** 2) {
+      this.hitPlayer();
+      if (this.mode !== 'play') return;
+    }
+    if (boss.entering) return;
+
+    const speed = 4.4 + this.level * 0.32;
+    boss.spawnIn -= dt;
+    if (boss.spawnIn <= 0) {
+      if (boss.kind === 'carrier') {
+        boss.spawnIn = Math.max(3, 6 - this.level * 0.2);
+        this.spawnFoe('fighter', boss.group.position.x - 1.4, boss.group.position.y);
+        this.spawnFoe('fighter', boss.group.position.x + 1.4, boss.group.position.y);
+      } else if (boss.kind === 'void') {
+        boss.spawnIn = Math.max(1.6, 3 - this.level * 0.1);
+        this.fireFan(boss.group.position, 3, 0.4, speed);
+      }
+    }
+
+    boss.attackIn -= dt;
+    if (boss.attackIn > 0) return;
+    const rank = Math.floor((this.level - 1) / BOSS_KINDS.length);
+    switch (boss.kind) {
+      case 'meteor': {
+        boss.attackIn = Math.max(0.85, 1.9 - this.level * 0.06);
+        const count = 9 + Math.min(5, Math.floor(this.level / 2));
+        for (let i = 0; i < count; i++) {
+          const a = (i / count) * Math.PI * 2 + t * 0.5;
+          this.fireShot(
+            boss.group.position.x,
+            boss.group.position.y,
+            Math.cos(a) * speed * 0.75,
+            Math.sin(a) * speed * 0.75,
+          );
+        }
+        if (rank > 0) this.fireFan(boss.group.position, 3, 0.5, speed);
+        break;
+      }
+      case 'carrier': {
+        boss.attackIn = Math.max(0.7, 1.5 - this.level * 0.05);
+        this.fireFan(boss.group.position, 3 + Math.min(2, Math.floor(this.level / 4)), 0.42, speed);
+        if (rank > 0) this.fireRing(boss.group.position, 8, speed * 0.7, t);
+        break;
+      }
+      case 'fortress': {
+        boss.attackIn = Math.max(1.1, 2.2 - this.level * 0.07);
+        this.fireFan(boss.group.position, 5 + Math.min(2, Math.floor(this.level / 4)), 0.85, speed * 0.9);
+        if (rank > 0) {
+          this.fireShot(
+            boss.group.position.x,
+            boss.group.position.y,
+            Math.cos(t * 2.4) * speed,
+            Math.sin(t * 2.4) * speed,
+          );
+        }
+        break;
+      }
+      case 'void': {
+        boss.attackIn = 0.15;
+        boss.spiral += 0.38;
+        this.fireShot(
+          boss.group.position.x,
+          boss.group.position.y,
+          Math.cos(boss.spiral) * speed,
+          Math.sin(boss.spiral) * speed,
+        );
+        if (rank > 0 && this.rng() < 0.06) {
+          this.fireRing(boss.group.position, 10, speed * 0.65, t);
+        }
+        break;
+      }
+    }
+  }
+
+  private fireRing(origin: THREE.Vector3, count: number, speed: number, phase: number) {
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + phase * 0.4;
+      this.fireShot(origin.x, origin.y, Math.cos(a) * speed, Math.sin(a) * speed);
+    }
+  }
+
+  private killBoss() {
+    const boss = this.boss;
+    boss.alive = false;
+    boss.group.visible = false;
+    const color = BOSS_COLORS[boss.kind];
+    this.particles.spawn(boss.group.position, color, 60, 8);
+    this.particles.spawn(boss.group.position, 0xffffff, 30, 5);
+    this.ui.shake(1.6);
+    this.ui.flash('#ffd166');
+    sfx.bomb();
+    sfx.gold();
+
+    const bonus = 600 * this.level;
+    this.score += bonus;
+    this.ui.setScore(this.score, true);
+    this.ui.float(`RAJA TUMBANG +${bonus}`, window.innerWidth / 2, window.innerHeight * 0.3, 'gold');
+    this.spawnPickup(boss.group.position);
+
+    for (const shot of this.enemyBullets) {
+      shot.active = false;
+      shot.mesh.visible = false;
+    }
+
+    this.level++;
+    this.phase = 'wave';
+    this.waveClock = 0;
+    this.bossWarned = false;
+    this.spawnIn = 0.9;
+    this.ui.float(`LEVEL ${this.level}`, window.innerWidth / 2, window.innerHeight * 0.34, 'gold');
+    this.updateHud();
+  }
+
   private killFoe(foe: Foe) {
-    const base = foe.kind === 'meteor' ? (foe.big ? 22 : 10) : foe.kind === 'fighter' ? 16 : 38;
+    const base =
+      foe.kind === 'meteor' ? (foe.big ? 22 : 10)
+      : foe.kind === 'fighter' ? 16
+      : foe.kind === 'darter' ? 14
+      : foe.kind === 'turret' ? 32
+      : 38;
     const value = base * this.level;
     this.score += value;
     this.ui.setScore(this.score, true);
 
-    const color = foe.kind === 'meteor' ? ROCK : foe.kind === 'fighter' ? HOSTILE : BOMBER;
-    this.particles.spawn(foe.group.position, color, foe.kind === 'bomber' ? 26 : 16, 5);
-    if (foe.kind === 'bomber') sfx.bomb();
+    const color = FOE_COLORS[foe.kind];
+    this.particles.spawn(foe.group.position, color, foe.kind === 'bomber' || foe.kind === 'turret' ? 26 : 16, 5);
+    if (foe.kind === 'bomber' || foe.kind === 'turret') sfx.bomb();
     else sfx.smash(2);
 
-    const drop = this.rng() < 0.16 || this.sinceDrop >= 9;
+    const drop = this.rng() < 0.15 || this.sinceDrop >= 10;
     if (drop) {
       this.sinceDrop = 0;
       this.spawnPickup(foe.group.position);
@@ -896,7 +1344,7 @@ export class SkyGame extends BaseGame {
         this.ui.float(`DARAH PENUH +${bonus}`, sx, sy, 'gold');
       }
     } else if (pickup.type === 'weapon') {
-      if (this.weapon < 3) {
+      if (this.weapon < MAX_WEAPON) {
         this.weapon++;
         this.ui.float(`SENJATA W${this.weapon}`, sx, sy);
       } else {
@@ -906,8 +1354,8 @@ export class SkyGame extends BaseGame {
         this.ui.float(`SENJATA MAKS +${bonus}`, sx, sy, 'gold');
       }
     } else {
-      this.shield = 7;
-      this.ui.float('PERISAI 7s', sx, sy);
+      this.shield = 5;
+      this.ui.float('PERISAI 5s', sx, sy);
     }
     this.updateHud();
   }
@@ -923,7 +1371,7 @@ export class SkyGame extends BaseGame {
     }
 
     this.hp--;
-    this.invuln = 1.7;
+    this.invuln = 1.3;
     this.ui.shake();
     this.ui.flash('#ff5d7a');
     this.particles.spawn(this.player.position, CYAN, 26, 5);
