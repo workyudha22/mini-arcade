@@ -122,9 +122,6 @@ interface Shot {
   dmg: number;
   turn: number;
   form: WeaponForm;
-  amp: number;
-  freq: number;
-  phase: number;
 }
 
 interface Pickup {
@@ -180,6 +177,14 @@ export class SkyGame extends BaseGame {
   private bossWarned = false;
   private boss!: Boss;
   private bossSpins!: Record<BossKind, THREE.Group | null>;
+  private whip = {
+    segments: [] as THREE.Mesh[],
+    glows: [] as THREE.Sprite[],
+    active: false,
+    ttl: 0,
+    phase: 0,
+    tick: 0,
+  };
   private drag: { id: number; x: number; y: number; tx: number; ty: number } | null = null;
   private keys = new Set<string>();
 
@@ -293,6 +298,7 @@ export class SkyGame extends BaseGame {
     this.buildShots();
     this.buildPickups();
     this.buildBoss();
+    this.buildWhip();
     this.bindInput();
     this.mount();
   }
@@ -556,6 +562,29 @@ export class SkyGame extends BaseGame {
     }
   }
 
+  private buildWhip() {
+    const geo = new THREE.OctahedronGeometry(0.22, 0);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xd8b4fe,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    for (let i = 0; i < 22; i++) {
+      const segment = new THREE.Mesh(geo, mat);
+      segment.visible = false;
+      this.scene.add(segment);
+      this.whip.segments.push(segment);
+      const glow = glowSprite(0xc084fc, 1.15);
+      glow.visible = false;
+      glow.material.opacity = 0.55;
+      glow.position.z = -0.25;
+      this.scene.add(glow);
+      this.whip.glows.push(glow);
+    }
+  }
+
   private buildBoss() {
     const group = new THREE.Group();
     const mat = (color: number, glow = 0.45) =>
@@ -741,6 +770,96 @@ export class SkyGame extends BaseGame {
     };
   }
 
+  private fireWhip() {
+    const whip = this.whip;
+    if (whip.active) {
+      whip.ttl = Math.max(whip.ttl, 0.4);
+      return;
+    }
+    whip.active = true;
+    whip.ttl = 0.85;
+    whip.tick = 0;
+    whip.phase = this.rng() * Math.PI * 2;
+    for (const seg of whip.segments) seg.visible = true;
+    for (const glow of whip.glows) glow.visible = true;
+    this.particles.spawn(new THREE.Vector3(this.playerX, this.playerY + 1.6, 0), 0xd8b4fe, 10, 4);
+    sfx.smash(3);
+  }
+
+  private hideWhip() {
+    this.whip.active = false;
+    for (const seg of this.whip.segments) seg.visible = false;
+    for (const glow of this.whip.glows) glow.visible = false;
+  }
+
+  private updateWhip(dt: number) {
+    const whip = this.whip;
+    if (!whip.active) return;
+    whip.ttl -= dt;
+    if (whip.ttl <= 0 || this.mode !== 'play') {
+      this.hideWhip();
+      return;
+    }
+    whip.phase += dt * 7.5;
+    whip.tick -= dt;
+
+    const level = this.weaponLevel;
+    const segments = whip.segments;
+    const count = segments.length;
+    const reach = 6.4 + level * 0.35;
+    const amp0 = 0.35 + level * 0.12;
+    const ampGrow = 0.055 + level * 0.022;
+    const step = reach / (count - 1);
+
+    for (let i = 0; i < count; i++) {
+      const t = i / (count - 1);
+      const amp = amp0 + ampGrow * i;
+      const angle = whip.phase + i * 0.46;
+      const x = this.playerX + Math.sin(angle) * amp;
+      const y = this.playerY + 1.7 + i * step;
+      // Tangent of the sine path for segment orientation.
+      const dx = amp * 0.46 * Math.cos(angle);
+      const dy = step;
+
+      const mesh = segments[i];
+      mesh.position.set(x, y, 0);
+      mesh.rotation.z = Math.atan2(-dx, dy);
+      const swell = Math.sin(t * Math.PI);
+      mesh.scale.set(1 + swell * 0.9, 1.5 + swell * 1.5, 1);
+
+      const glow = whip.glows[i];
+      glow.position.set(x, y, -0.25);
+      glow.scale.setScalar(0.75 + swell * 1.1);
+    }
+
+    if (whip.tick <= 0) {
+      whip.tick = 0.16;
+      const dmg = 1 + Math.floor(level / 4);
+      for (const foe of this.foes) {
+        if (!foe.alive) continue;
+        if (!this.whipOverlaps(foe.group.position, foe.radius + 0.24)) continue;
+        foe.hp -= dmg;
+        this.particles.spawn(foe.group.position, 0xd8b4fe, 3, 2, 0.12);
+        if (foe.hp <= 0) this.killFoe(foe);
+      }
+      const boss = this.boss;
+      if (boss.alive && this.whipOverlaps(boss.group.position, boss.radius * 0.72 + 0.4)) {
+        boss.hp -= dmg;
+        this.particles.spawn(boss.group.position, 0xd8b4fe, 5, 3, 0.2);
+        if (boss.hp <= 0) this.killBoss();
+      }
+    }
+  }
+
+  private whipOverlaps(target: THREE.Vector3, radius: number) {
+    for (const seg of this.whip.segments) {
+      const dx = seg.position.x - target.x;
+      const dy = seg.position.y - target.y;
+      if (dx * dx + dy * dy < radius * radius) return true;
+    }
+    return false;
+  }
+
   private buildShots() {
     for (let i = 0; i < SHOT_POOL; i++) {
       // One pooled group per live shot; child meshes toggled to match the active form.
@@ -753,14 +872,14 @@ export class SkyGame extends BaseGame {
       }
       mesh.visible = false;
       this.scene.add(mesh);
-      this.bullets.push({ mesh, active: false, vx: 0, vy: 17, pierce: 0, dmg: 1, turn: 0, form: 'LANCE', amp: 0, freq: 0, phase: 0 });
+      this.bullets.push({ mesh, active: false, vx: 0, vy: 17, pierce: 0, dmg: 1, turn: 0, form: 'LANCE' });
     }
     for (let i = 0; i < ENEMY_SHOT_POOL; i++) {
       const mesh = new THREE.Group();
       mesh.add(new THREE.Mesh(this.shardGeo, this.shardMat));
       mesh.visible = false;
       this.scene.add(mesh);
-      this.enemyBullets.push({ mesh, active: false, vx: 0, vy: -5, pierce: 0, dmg: 1, turn: 0, form: 'LANCE', amp: 0, freq: 0, phase: 0 });
+      this.enemyBullets.push({ mesh, active: false, vx: 0, vy: -5, pierce: 0, dmg: 1, turn: 0, form: 'LANCE' });
     }
   }
 
@@ -877,6 +996,7 @@ export class SkyGame extends BaseGame {
 
     this.boss.alive = false;
     this.boss.group.visible = false;
+    this.hideWhip();
 
     this.playerX = this.targetX = 0;
     this.playerY = this.targetY = -this.halfH * 0.55;
@@ -946,6 +1066,7 @@ export class SkyGame extends BaseGame {
       }
 
       this.updateFoes(dt);
+      this.updateWhip(dt);
       this.updateBullets(dt);
       this.updatePickups(dt);
       this.animateStars(dt, 3.2 + this.level * 0.5);
@@ -1207,7 +1328,7 @@ export class SkyGame extends BaseGame {
       SEEKER: [0.38, 0.018, 0.22],
       RAIL: [0.4, 0.016, 0.24],
       RING: [0.62, 0.026, 0.36],
-      WHIP: [0.5, 0.022, 0.3],
+      WHIP: [0.85, 0.03, 0.6],
     };
     const [base, step, min] = curve[this.weaponForm];
     return Math.max(min, base - (l - 1) * step);
@@ -1221,9 +1342,6 @@ export class SkyGame extends BaseGame {
     dmg: number,
     pierce: number,
     turn: number,
-    amp = 0,
-    freq = 0,
-    phase = 0,
   ) {
     const shot = this.bullets.find((s) => !s.active);
     if (!shot) return;
@@ -1237,9 +1355,6 @@ export class SkyGame extends BaseGame {
     shot.pierce = pierce;
     shot.turn = turn;
     shot.form = this.weaponForm;
-    shot.amp = amp;
-    shot.freq = freq;
-    shot.phase = phase;
     for (const child of shot.mesh.children) child.visible = child.name === this.weaponForm;
   }
 
@@ -1254,11 +1369,7 @@ export class SkyGame extends BaseGame {
       dmg = 1,
       pierce = 0,
       turn = 0,
-      amp = 0,
-      freq = 0,
-      phase = 0,
-    ) =>
-      this.spawnPlayerBullet(this.playerX + x, y + yOff, vx, vy, dmg, pierce, turn, amp, freq, phase);
+    ) => this.spawnPlayerBullet(this.playerX + x, y + yOff, vx, vy, dmg, pierce, turn);
 
     switch (this.weaponForm) {
       case 'LANCE': {
@@ -1317,16 +1428,8 @@ export class SkyGame extends BaseGame {
         break;
       }
       case 'WHIP': {
-        // Laser whip: a serpentine chain of energy segments that slithers
-        // forward with growing amplitude as it unspools.
-        const count = 5 + l;
-        const amp = Math.min(2.4, 0.8 + l * 0.18);
-        const dmg = l >= 7 ? 2 : 1;
-        const pierce = 1 + Math.floor(l / 3);
-        const freq = 11;
-        for (let i = 0; i < count; i++) {
-          spawn(0, 0, 0, 15, dmg, pierce, 0, amp, freq, i * 0.85);
-        }
+        // Laser lash: serpentine thunderbolt from the nose. Heavy cooldown, long reach.
+        this.fireWhip();
         break;
       }
     }
@@ -1336,13 +1439,6 @@ export class SkyGame extends BaseGame {
   private updateBullets(dt: number) {
     for (const shot of this.bullets) {
       if (!shot.active) continue;
-
-      // Whips undulate laterally like a cracking lash.
-      if (shot.amp > 0) {
-        shot.phase += shot.freq * dt;
-        shot.vx = Math.cos(shot.phase) * shot.amp;
-        shot.mesh.rotation.z = Math.atan2(shot.vy, shot.vx) - Math.PI / 2;
-      }
 
       // Seekers curve toward the nearest live target.
       if (shot.turn > 0) {
@@ -1802,6 +1898,7 @@ export class SkyGame extends BaseGame {
     this.deadIn = 0.9;
     this.shield = 0;
     this.shieldRing.visible = false;
+    this.hideWhip();
     this.ui.setMid('');
     this.player.visible = true;
     this.particles.spawn(this.player.position, CYAN, 34, 6);
