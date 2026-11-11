@@ -199,8 +199,8 @@ const GAMES: GameMeta[] = [
     id: 'sky',
     index: '07',
     name: 'SKY STRIKE',
-    blurb: 'Tembak meteor, pesawat, drone, dan turret. Tiap level punya raja sendiri — makin tinggi, makin ganas.',
-    howto: 'Geser untuk menggerakkan pesawat; tembakan otomatis. Hancurkan musuh untuk menjatuhkan equipment acak: darah, senjata, atau perisai. Senjata naik sampai W5 dengan pola tembakan berbeda. Tiap level berakhir dengan raja yang serangannya makin ganas; kalahkan raja untuk naik level. Mulai dengan 3 darah (maksimal 5).',
+    blurb: 'Lima bentuk senjata acak — LANCE, NOVA, SEEKER, RAIL, RING — level sampai 10. Setiap level punya rajanya.',
+    howto: 'Geser untuk menggerakkan pesawat; tembakan otomatis. Hancurkan musuh untuk equipment acak: darah, senjata, perisai. Setiap pickup senjata menaikkan level (maks 10) dan mengacak ulang bentuknya — LANCE: bolt lurus, NOVA: shotgun, SEEKER: rudal homing, RAIL: railgun tembus, RING: ledakan radial. Tiap level berakhir dengan raja berbeda (6 raja, makin tinggi level makin ganas); kalahkan raja untuk naik level. Mulai dengan 3 darah (maksimal 5).',
     accent: '#5eead4',
     create: (host, ui) => new SkyGame(host, ui),
     art: `<svg viewBox="0 0 320 200" fill="none" aria-hidden="true">

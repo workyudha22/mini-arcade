@@ -36,11 +36,13 @@ Buka `http://localhost:5173`. Build produksi: `npm run build`, lalu
 - **Prism Break** — geser paddle, pantulkan bola, pecahkan semua prisma neon.
   Tiap level bola makin cepat dan susunan makin padat. Tiga bola; skor makin
   besar di level tinggi. Desktop: panah atau mouse.
-- **Sky Strike** — pesawat neon menembak otomatis ke atas. Hancurkan meteor,
-  pesawat tempur, drone, bomber, dan turret untuk menjatuhkan equipment acak:
-  darah, senjata, atau perisai. Senjata naik sampai W5 dengan pola tembakan
-  berbeda. Tiap level berakhir dengan raja yang serangannya makin ganas —
-  kalahkan raja untuk naik level. Desktop: panah atau WASD.
+- **Sky Strike** — pesawat hover-blade futuristik menembak otomatis. Lima bentuk
+  senjata (LANCE, NOVA, SEEKER, RAIL, RING) dengan level pola sampai 10 —
+  setiap pickup senjata menaikkan level dan mengacak ulang bentuknya. Setiap
+  level berakhir dengan raja berbeda (6 raja: Meteor, Sayap, Bombardir, Void,
+  Badai, Mahkota) yang serangannya makin ganas; kalahkan raja untuk naik level.
+  Hancurkan meteor, pesawat tempur, drone, bomber, dan turret untuk
+  menjatuhkan darah, senjata, dan perisai. Desktop: panah atau WASD.
 
 ## Deploy
 
