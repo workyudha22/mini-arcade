@@ -30,7 +30,7 @@ const VIOLET = 0xa78bfa;
 const GOLD = 0xffd166;
 const STORM = 0x67e8f9;
 
-const WEAPON_FORMS = ['LANCE', 'NOVA', 'SEEKER', 'RAIL', 'RING'] as const;
+const WEAPON_FORMS = ['LANCE', 'NOVA', 'SEEKER', 'RAIL', 'RING', 'WHIP'] as const;
 type WeaponForm = (typeof WEAPON_FORMS)[number];
 const WEAPON_COLORS: Record<WeaponForm, number> = {
   LANCE: 0x9ff6ff,
@@ -38,6 +38,7 @@ const WEAPON_COLORS: Record<WeaponForm, number> = {
   SEEKER: 0xffd166,
   RAIL: 0xff5db1,
   RING: 0x4ee1ff,
+  WHIP: 0xc084fc,
 };
 
 const BOSS_KINDS: BossKind[] = ['meteor', 'carrier', 'fortress', 'void', 'storm', 'crown'];
@@ -121,6 +122,9 @@ interface Shot {
   dmg: number;
   turn: number;
   form: WeaponForm;
+  amp: number;
+  freq: number;
+  phase: number;
 }
 
 interface Pickup {
@@ -237,6 +241,7 @@ export class SkyGame extends BaseGame {
     SEEKER: new THREE.ConeGeometry(0.12, 0.55, 6),
     RAIL: new THREE.BoxGeometry(0.07, 1.6, 0.07),
     RING: new THREE.TetrahedronGeometry(0.22),
+    WHIP: new THREE.BoxGeometry(0.15, 0.42, 0.15),
   };
   private bulletMats: Record<WeaponForm, THREE.MeshBasicMaterial> = Object.fromEntries(
     WEAPON_FORMS.map((form) => [
@@ -748,14 +753,14 @@ export class SkyGame extends BaseGame {
       }
       mesh.visible = false;
       this.scene.add(mesh);
-      this.bullets.push({ mesh, active: false, vx: 0, vy: 17, pierce: 0, dmg: 1, turn: 0, form: 'LANCE' });
+      this.bullets.push({ mesh, active: false, vx: 0, vy: 17, pierce: 0, dmg: 1, turn: 0, form: 'LANCE', amp: 0, freq: 0, phase: 0 });
     }
     for (let i = 0; i < ENEMY_SHOT_POOL; i++) {
       const mesh = new THREE.Group();
       mesh.add(new THREE.Mesh(this.shardGeo, this.shardMat));
       mesh.visible = false;
       this.scene.add(mesh);
-      this.enemyBullets.push({ mesh, active: false, vx: 0, vy: -5, pierce: 0, dmg: 1, turn: 0, form: 'LANCE' });
+      this.enemyBullets.push({ mesh, active: false, vx: 0, vy: -5, pierce: 0, dmg: 1, turn: 0, form: 'LANCE', amp: 0, freq: 0, phase: 0 });
     }
   }
 
@@ -1156,12 +1161,24 @@ export class SkyGame extends BaseGame {
       SEEKER: [0.38, 0.018, 0.22],
       RAIL: [0.4, 0.016, 0.24],
       RING: [0.62, 0.026, 0.36],
+      WHIP: [0.5, 0.022, 0.3],
     };
     const [base, step, min] = curve[this.weaponForm];
     return Math.max(min, base - (l - 1) * step);
   }
 
-  private spawnPlayerBullet(x: number, y: number, vx: number, vy: number, dmg: number, pierce: number, turn: number) {
+  private spawnPlayerBullet(
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+    dmg: number,
+    pierce: number,
+    turn: number,
+    amp = 0,
+    freq = 0,
+    phase = 0,
+  ) {
     const shot = this.bullets.find((s) => !s.active);
     if (!shot) return;
     shot.active = true;
@@ -1174,14 +1191,28 @@ export class SkyGame extends BaseGame {
     shot.pierce = pierce;
     shot.turn = turn;
     shot.form = this.weaponForm;
+    shot.amp = amp;
+    shot.freq = freq;
+    shot.phase = phase;
     for (const child of shot.mesh.children) child.visible = child.name === this.weaponForm;
   }
 
   private shoot() {
     const y = this.playerY + 1.52;
     const l = this.weaponLevel;
-    const spawn = (x: number, yOff: number, vx: number, vy: number, dmg = 1, pierce = 0, turn = 0) =>
-      this.spawnPlayerBullet(this.playerX + x, y + yOff, vx, vy, dmg, pierce, turn);
+    const spawn = (
+      x: number,
+      yOff: number,
+      vx: number,
+      vy: number,
+      dmg = 1,
+      pierce = 0,
+      turn = 0,
+      amp = 0,
+      freq = 0,
+      phase = 0,
+    ) =>
+      this.spawnPlayerBullet(this.playerX + x, y + yOff, vx, vy, dmg, pierce, turn, amp, freq, phase);
 
     switch (this.weaponForm) {
       case 'LANCE': {
@@ -1239,6 +1270,19 @@ export class SkyGame extends BaseGame {
         }
         break;
       }
+      case 'WHIP': {
+        // Laser whip: a serpentine chain of energy segments that slithers
+        // forward with growing amplitude as it unspools.
+        const count = 5 + l;
+        const amp = Math.min(2.4, 0.8 + l * 0.18);
+        const dmg = l >= 7 ? 2 : 1;
+        const pierce = 1 + Math.floor(l / 3);
+        const freq = 11;
+        for (let i = 0; i < count; i++) {
+          spawn(0, 0, 0, 15, dmg, pierce, 0, amp, freq, i * 0.85);
+        }
+        break;
+      }
     }
     sfx.laser();
   }
@@ -1246,6 +1290,13 @@ export class SkyGame extends BaseGame {
   private updateBullets(dt: number) {
     for (const shot of this.bullets) {
       if (!shot.active) continue;
+
+      // Whips undulate laterally like a cracking lash.
+      if (shot.amp > 0) {
+        shot.phase += shot.freq * dt;
+        shot.vx = Math.cos(shot.phase) * shot.amp;
+        shot.mesh.rotation.z = Math.atan2(shot.vy, shot.vx) - Math.PI / 2;
+      }
 
       // Seekers curve toward the nearest live target.
       if (shot.turn > 0) {
