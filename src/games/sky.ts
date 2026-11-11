@@ -1651,22 +1651,17 @@ export class SkyGame extends BaseGame {
         this.ui.float(`DARAH PENUH +${bonus}`, sx, sy, 'gold');
       }
     } else if (pickup.type === 'weapon') {
+      // Bentuk senjata selalu diacak ulang setiap pickup — dopamine gamble.
+      const others = WEAPON_FORMS.filter((f) => f !== this.weaponForm);
+      this.weaponForm = others[Math.floor(this.rng() * others.length)];
       if (this.weaponLevel < MAX_WEAPON_LEVEL) {
         this.weaponLevel++;
-        // Bentuk senjata diacak ulang setiap pickup — dopamine gamble.
-        const others = WEAPON_FORMS.filter((f) => f !== this.weaponForm);
-        this.weaponForm = others[Math.floor(this.rng() * others.length)];
-        this.ui.float(
-          `${this.weaponForm} · LV ${this.weaponLevel}`,
-          sx,
-          sy,
-          'gold',
-        );
+        this.ui.float(`${this.weaponForm} · LV ${this.weaponLevel}`, sx, sy, 'gold');
       } else {
         const bonus = 250 * this.level;
         this.score += bonus;
         this.ui.setScore(this.score, true);
-        this.ui.float(`SENJATA MAKS +${bonus}`, sx, sy, 'gold');
+        this.ui.float(`${this.weaponForm} · MAKS +${bonus}`, sx, sy, 'gold');
       }
     } else {
       this.shield = 5;
